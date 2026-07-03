@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html lang="id">
+<head><meta charset="UTF-8"><title>SIGAP BENCANA</title></head>
+<body>
+<script>
+  const token = localStorage.getItem('sigap_token');
+  window.location.href = token ? '/dashboard.html' : '/login.html';
+</script>
+</body>
+</html>

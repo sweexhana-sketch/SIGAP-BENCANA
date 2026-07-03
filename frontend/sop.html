@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dokumen SOP — SIGAP BENCANA</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="shell-root"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+Auth.requireLogin();
+const user = Auth.getUser();
+renderShell('sop', 'Dokumen SOP', 'Repositori Standar Operasional Prosedur — draft, review, hingga pengesahan');
+
+const content = document.getElementById('page-content');
+content.innerHTML = `
+  <div class="content-header">
+    <div>
+      <span class="eyebrow">Kegiatan 2 & 5 — SIGAP BENCANA</span>
+      <h2>Dokumen SOP Pelayanan Tanggap Darurat</h2>
+      <div class="desc">Kelola versi draft hingga dokumen final yang disahkan sebagai pedoman kerja resmi Bidang Perlindungan dan Jaminan Sosial.</div>
+    </div>
+    <button class="btn btn-amber" onclick="openFormModal()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+      Unggah Dokumen
+    </button>
+  </div>
+  <div id="sop-list" class="grid-2"></div>
+`;
+
+async function loadList(){
+  try{
+    const list = await api('/sop');
+    document.getElementById('sop-list').innerHTML = list.length ? list.map(s => `
+      <div class="card">
+        <div class="card-pad">
+          <div class="flex justify-between items-start">
+            <div style="flex:1;">
+              <div class="td-strong" style="font-size:15px;">${escapeHtml(s.judul)}</div>
+              <div class="text-faint text-sm mono mt-8">${escapeHtml(s.nomor_dokumen || '-')} · v${escapeHtml(s.versi)}</div>
+            </div>
+            <span class="badge ${s.status==='final'?'sop-badge-final':'sop-badge-draft'}">${s.status==='final'?'FINAL':'DRAFT'}</span>
+          </div>
+          <div class="text-sm text-soft mt-8">${escapeHtml(s.dasar_hukum)}</div>
+          ${s.catatan ? `<div class="text-sm mt-8">${escapeHtml(s.catatan)}</div>` : ''}
+          <div class="divider"></div>
+          <div class="flex justify-between items-center text-sm text-faint">
+            <span>Diunggah oleh ${escapeHtml(s.diunggah_oleh)}</span>
+            <span>${formatTanggal(s.created_at)}</span>
+          </div>
+          <div class="flex gap-8 mt-14" style="flex-wrap:wrap;">
+            ${s.file_path ? `<a class="btn btn-outline btn-sm" href="${s.file_path}" target="_blank">Buka File</a>` : '<span class="text-faint text-sm">Tidak ada file terlampir</span>'}
+            ${s.status === 'draft' && ['admin','kepala_bidang'].includes(user.role) ? `<button class="btn btn-teal btn-sm" onclick="sahkanSOP('${s.id}')">Sahkan Dokumen</button>` : ''}
+            ${['admin','kepala_bidang'].includes(user.role) ? `<button class="btn btn-danger btn-sm" onclick="hapusSOP('${s.id}')">Hapus</button>` : ''}
+          </div>
+        </div>
+      </div>
+    `).join('') : `<div class="card"><div class="empty-state"><div class="ic">📄</div><div class="t">Belum ada dokumen SOP</div></div></div>`;
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+function openFormModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>Unggah Dokumen SOP</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+      <div class="modal-body">
+        <div class="field"><label>Judul Dokumen</label><input type="text" id="f-judul" value="SOP Pelayanan Tanggap Darurat dan Distribusi Bantuan Logistik Bagi Korban Bencana"></div>
+        <div class="form-grid">
+          <div class="field"><label>Nomor Dokumen</label><input type="text" id="f-nomor" placeholder="mis. SOP/DINSOS-PPPA/PBD/2026/001"></div>
+          <div class="field"><label>Versi</label><input type="text" id="f-versi" placeholder="mis. 1.0" value="1.0"></div>
+        </div>
+        <div class="field"><label>Dasar Hukum</label><input type="text" id="f-dasar" value="Permensos No. 9 Tahun 2018 tentang Standar Teknis Pelayanan Dasar pada SPM Bidang Sosial"></div>
+        <div class="field"><label>File Dokumen (PDF/DOC/DOCX, maks. 10MB)</label><input type="file" id="f-file" accept=".pdf,.doc,.docx"></div>
+        <div class="field"><label>Catatan</label><textarea id="f-catatan" placeholder="Catatan versi/perubahan"></textarea></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Batal</button>
+        <button class="btn btn-primary" id="btn-upload" onclick="submitSOP()">Unggah</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+async function submitSOP(){
+  const judul = document.getElementById('f-judul').value.trim();
+  const versi = document.getElementById('f-versi').value.trim();
+  if (!judul || !versi){ toast('Judul dan versi wajib diisi.', 'error'); return; }
+  const fd = new FormData();
+  fd.append('judul', judul);
+  fd.append('nomor_dokumen', document.getElementById('f-nomor').value.trim());
+  fd.append('versi', versi);
+  fd.append('dasar_hukum', document.getElementById('f-dasar').value.trim());
+  fd.append('catatan', document.getElementById('f-catatan').value.trim());
+  const fileInput = document.getElementById('f-file');
+  if (fileInput.files[0]) fd.append('file', fileInput.files[0]);
+
+  const btn = document.getElementById('btn-upload');
+  btn.disabled = true; btn.textContent = 'Mengunggah...';
+  try{
+    await api('/sop', { method:'POST', body: fd, isForm: true });
+    toast('Dokumen SOP berhasil diunggah.');
+    document.querySelector('.modal-overlay').remove();
+    loadList();
+  }catch(err){ toast(err.message, 'error'); btn.disabled = false; btn.textContent = 'Unggah'; }
+}
+
+async function sahkanSOP(id){
+  if (!confirm('Sahkan dokumen ini sebagai SOP final? Dokumen final menjadi pedoman kerja resmi bidang.')) return;
+  try{
+    await api(`/sop/${id}/sahkan`, { method:'PATCH' });
+    toast('Dokumen SOP telah disahkan.');
+    loadList();
+  }catch(err){ toast(err.message, 'error'); }
+}
+async function hapusSOP(id){
+  if (!confirm('Hapus dokumen ini?')) return;
+  try{
+    await api('/sop/' + id, { method:'DELETE' });
+    toast('Dokumen dihapus.');
+    loadList();
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+loadList();
+</script>
+</body>
+</html>

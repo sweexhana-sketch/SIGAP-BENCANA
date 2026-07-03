@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Distribusi & Tanda Terima — SIGAP BENCANA</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="shell-root"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+Auth.requireLogin();
+const user = Auth.getUser();
+renderShell('distribusi', 'Distribusi & Tanda Terima', 'Alur kerja: Assessment → Verifikasi → Distribusi → Pelaporan (Kegiatan 2–3 SOP SIGAP BENCANA)');
+
+const TAHAPAN = ['assessment','verifikasi','distribusi','pelaporan'];
+const TAHAPAN_LABEL = { assessment:'Assessment', verifikasi:'Verifikasi', distribusi:'Distribusi', pelaporan:'Pelaporan' };
+let bencanaList = [], korbanList = [], logistikList = [], distribusiList = [];
+const params = new URLSearchParams(window.location.search);
+let filterBencanaId = params.get('bencana_id') || '';
+
+const content = document.getElementById('page-content');
+content.innerHTML = `
+  <div class="content-header">
+    <div>
+      <span class="eyebrow">Alur Kerja Bantuan</span>
+      <h2>Rencana Distribusi Bantuan Logistik</h2>
+      <div class="desc">Setiap paket distribusi melalui 4 tahap baku sebelum bantuan dinyatakan tersalurkan secara akuntabel.</div>
+    </div>
+    <button class="btn btn-amber" onclick="openFormModal()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+      Buat Rencana Distribusi
+    </button>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-pad flex gap-10" style="flex-wrap:wrap;">
+      <select id="f-bencana" style="max-width:280px;" onchange="renderList()"></select>
+      <select id="f-tahap" style="max-width:200px;" onchange="renderList()">
+        <option value="">Semua Tahap</option>
+        ${TAHAPAN.map(t => `<option value="${t}">${TAHAPAN_LABEL[t]}</option>`).join('')}
+      </select>
+    </div>
+  </div>
+
+  <div id="list-distribusi" class="grid-2"></div>
+`;
+
+async function loadAll(){
+  try{
+    [bencanaList, korbanList, logistikList, distribusiList] = await Promise.all([
+      api('/bencana'), api('/korban'), api('/logistik'), api('/distribusi')
+    ]);
+    const sel = document.getElementById('f-bencana');
+    sel.innerHTML = `<option value="">Semua Kejadian Bencana</option>` +
+      bencanaList.map(b => `<option value="${b.id}" ${b.id===filterBencanaId?'selected':''}>${escapeHtml(b.jenis_bencana)} — ${escapeHtml(b.lokasi)}</option>`).join('');
+    renderList();
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+function renderList(){
+  const fBencana = document.getElementById('f-bencana').value;
+  const fTahap = document.getElementById('f-tahap').value;
+  let data = distribusiList.filter(d => (!fBencana || d.bencana_id === fBencana) && (!fTahap || d.tahap === fTahap));
+  data = [...data].sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+  document.getElementById('list-distribusi').innerHTML = data.length ? data.map(d => {
+    const b = bencanaList.find(x => x.id === d.bencana_id);
+    const idx = TAHAPAN.indexOf(d.tahap);
+    return `
+    <div class="card">
+      <div class="card-pad">
+        <div class="flex justify-between items-start">
+          <div>
+            <div class="td-strong" style="font-size:15px;">${escapeHtml(d.judul)}</div>
+            <div class="text-faint text-sm mono mt-8">${b ? escapeHtml(b.lokasi) : ''} · ${formatTanggal(d.created_at)}</div>
+          </div>
+          <span class="badge ${idx===3?'badge-teal':'badge-amber'}">${TAHAPAN_LABEL[d.tahap]}</span>
+        </div>
+        <div class="stepper mt-14">
+          ${TAHAPAN.map((t,i) => `
+            <div class="step ${i<idx?'done':''} ${i===idx?'current':''}">
+              <div class="connector"></div>
+              <div class="node">${i<idx?'✓':i+1}</div>
+              <div class="step-label">${TAHAPAN_LABEL[t]}</div>
+            </div>`).join('')}
+        </div>
+        <button class="btn btn-outline btn-sm w-full mt-14" onclick="openDetail('${d.id}')">Kelola Checklist & Tanda Terima →</button>
+      </div>
+    </div>`;
+  }).join('') : `<div class="card"><div class="empty-state"><div class="ic">📋</div><div class="t">Belum ada rencana distribusi</div><div class="d">Buat rencana distribusi untuk kejadian bencana terkait.</div></div></div>`;
+}
+
+function openFormModal(){
+  if (!bencanaList.length){ toast('Catat kejadian bencana terlebih dahulu sebelum membuat rencana distribusi.', 'error'); return; }
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>Buat Rencana Distribusi</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+      <div class="modal-body">
+        <div class="field">
+          <label>Kejadian Bencana</label>
+          <select id="f-bencana-id">${bencanaList.map(b => `<option value="${b.id}" ${b.id===filterBencanaId?'selected':''}>${escapeHtml(b.jenis_bencana)} — ${escapeHtml(b.lokasi)}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Judul Distribusi</label><input type="text" id="f-judul" placeholder="Opsional — akan dibuat otomatis jika kosong"></div>
+        <div class="field"><label>Catatan</label><textarea id="f-catatan" placeholder="Catatan rencana distribusi"></textarea></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Batal</button>
+        <button class="btn btn-primary" onclick="submitDistribusi()">Buat Rencana</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+async function submitDistribusi(){
+  const payload = {
+    bencana_id: document.getElementById('f-bencana-id').value,
+    judul: document.getElementById('f-judul').value.trim(),
+    catatan: document.getElementById('f-catatan').value.trim()
+  };
+  try{
+    const res = await api('/distribusi', { method:'POST', body: payload });
+    toast('Rencana distribusi berhasil dibuat.');
+    document.querySelector('.modal-overlay').remove();
+    await loadAll();
+    openDetail(res.id);
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+// ---------------- Detail ----------------
+async function openDetail(id){
+  try{
+    const d = await api('/distribusi/' + id);
+    const b = bencanaList.find(x => x.id === d.bencana_id);
+    const korbanBencana = korbanList.filter(k => k.bencana_id === d.bencana_id);
+    const idx = TAHAPAN.indexOf(d.tahap);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.innerHTML = `
+      <div class="modal modal-lg">
+        <div class="modal-head">
+          <div><h3>${escapeHtml(d.judul)}</h3><div class="text-faint text-sm">${b ? escapeHtml(b.jenis_bencana + ' — ' + b.lokasi) : ''}</div></div>
+          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="stepper">
+            ${TAHAPAN.map((t,i) => `
+              <div class="step ${i<idx?'done':''} ${i===idx?'current':''}">
+                <div class="connector"></div><div class="node">${i<idx?'✓':i+1}</div><div class="step-label">${TAHAPAN_LABEL[t]}</div>
+              </div>`).join('')}
+          </div>
+
+          <div class="divider"></div>
+          <div class="flex justify-between items-center">
+            <div class="eyebrow" style="margin:0;">Checklist Distribusi (${d.detail.length} item)</div>
+            ${d.tahap === 'assessment' ? `<button class="btn btn-outline btn-sm" onclick="openAddDetail('${d.id}','${d.bencana_id}')">+ Tambah Item</button>` : ''}
+          </div>
+
+          <div class="table-wrap mt-8">
+          ${d.detail.length ? `
+            <table><thead><tr><th></th><th>Penerima</th><th>Barang</th><th>Jumlah</th><th>Tanda Terima</th>${d.tahap==='assessment'?'<th></th>':''}</tr></thead><tbody>
+            ${d.detail.map(item => `
+              <tr>
+                <td>${item.checklist_disiapkan ? '<span style="color:var(--teal);">✔</span>' : (d.tahap!=='assessment' ? `<input type="checkbox" ${item.checklist_disiapkan?'checked':''} onchange="toggleChecklist('${d.id}','${item.id}','${id}')">` : '<span class="text-faint">–</span>')}</td>
+                <td class="text-sm">${escapeHtml(item.korban_nama)}</td>
+                <td class="text-sm">${escapeHtml(item.nama_barang)}</td>
+                <td class="mono">${item.jumlah} ${escapeHtml(item.satuan)}</td>
+                <td>${item.tanda_terima_signed
+                  ? `<span class="badge badge-teal">✔ ${escapeHtml(item.penerima_ttd_nama)}</span>`
+                  : (d.tahap==='distribusi' ? `<button class="btn btn-sm btn-teal" onclick="openTandaTerima('${d.id}','${item.id}','${id}')">Tanda Terima</button>` : '<span class="text-faint text-sm">Menunggu</span>')}
+                </td>
+                ${d.tahap==='assessment' ? `<td><button class="btn-icon btn-outline" onclick="hapusDetail('${d.id}','${item.id}','${id}')">🗑</button></td>` : ''}
+              </tr>`).join('')}
+            </tbody></table>
+          ` : `<div class="empty-state"><div class="d">Belum ada item checklist. Tambahkan barang untuk tiap korban penerima.</div></div>`}
+          </div>
+
+          <div class="divider"></div>
+          <div class="flex gap-8" style="flex-wrap:wrap;">
+            ${idx < 3 ? `<button class="btn btn-amber" onclick="lanjutTahap('${d.id}','${TAHAPAN[idx+1]}')">Lanjutkan ke Tahap: ${TAHAPAN_LABEL[TAHAPAN[idx+1]]} →</button>` : `<span class="badge badge-teal">Distribusi Selesai & Terlaporkan</span>`}
+            <a href="/laporan.html?distribusi_id=${d.id}" class="btn btn-outline" target="_blank">Cetak Berita Acara / Tanda Terima</a>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+function openAddDetail(distribusiId, bencanaId){
+  const korbanBencana = korbanList.filter(k => k.bencana_id === bencanaId);
+  if (!korbanBencana.length){ toast('Belum ada data korban untuk kejadian bencana ini. Tambahkan di menu Data Korban.', 'error'); return; }
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>Tambah Item Checklist</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+      <div class="modal-body">
+        <div class="field"><label>Korban Penerima</label>
+          <select id="dd-korban">${korbanBencana.map(k => `<option value="${k.id}">${escapeHtml(k.nama)}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Barang</label>
+          <select id="dd-barang">${logistikList.map(l => `<option value="${l.id}">${escapeHtml(l.nama_barang)} (stok: ${l.stok_tersedia} ${escapeHtml(l.satuan)})</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Jumlah</label><input type="number" id="dd-jumlah" min="1"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Batal</button>
+        <button class="btn btn-primary" onclick="submitDetail('${distribusiId}')">Tambah</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+async function submitDetail(distribusiId){
+  const payload = {
+    korban_id: document.getElementById('dd-korban').value,
+    logistik_id: document.getElementById('dd-barang').value,
+    jumlah: document.getElementById('dd-jumlah').value
+  };
+  if (!payload.jumlah || Number(payload.jumlah) <= 0){ toast('Jumlah wajib diisi.', 'error'); return; }
+  try{
+    await api(`/distribusi/${distribusiId}/detail`, { method:'POST', body: payload });
+    toast('Item checklist ditambahkan.');
+    document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+    await loadAll();
+    openDetail(distribusiId);
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+async function hapusDetail(distribusiId, detailId, reopenId){
+  try{
+    await api(`/distribusi/${distribusiId}/detail/${detailId}`, { method:'DELETE' });
+    toast('Item checklist dihapus.');
+    document.querySelector('.modal-overlay').remove();
+    await loadAll();
+    openDetail(reopenId);
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+async function toggleChecklist(distribusiId, detailId, reopenId){
+  try{
+    await api(`/distribusi/${distribusiId}/detail/${detailId}/checklist`, { method:'PATCH' });
+    await loadAll();
+    document.querySelector('.modal-overlay').remove();
+    openDetail(reopenId);
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+function openTandaTerima(distribusiId, detailId, reopenId){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>Tanda Terima Bantuan</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+      <div class="modal-body">
+        <div class="field"><label>Nama Penerima (sesuai identitas)</label><input type="text" id="tt-nama" placeholder="Nama lengkap penerima/wakil keluarga"></div>
+        <div class="text-faint text-sm">Dengan menyimpan, sistem mencatat waktu serah terima dan nama petugas yang menyerahkan sebagai bukti akuntabilitas.</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Batal</button>
+        <button class="btn btn-teal" onclick="submitTandaTerima('${distribusiId}','${detailId}','${reopenId}')">Simpan Tanda Terima</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+async function submitTandaTerima(distribusiId, detailId, reopenId){
+  const penerima_ttd_nama = document.getElementById('tt-nama').value.trim();
+  if (!penerima_ttd_nama){ toast('Nama penerima wajib diisi.', 'error'); return; }
+  try{
+    await api(`/distribusi/${distribusiId}/detail/${detailId}/tanda-terima`, { method:'PATCH', body:{ penerima_ttd_nama } });
+    toast('Tanda terima berhasil dicatat.');
+    document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+    await loadAll();
+    openDetail(reopenId);
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+async function lanjutTahap(id, tahap){
+  if (tahap === 'verifikasi' && !['admin','kepala_bidang'].includes(user.role)){
+    toast('Hanya Kepala Bidang/Admin yang dapat memverifikasi tahap ini.', 'error'); return;
+  }
+  if (!confirm(`Lanjutkan ke tahap "${TAHAPAN_LABEL[tahap]}"?`)) return;
+  try{
+    await api(`/distribusi/${id}/tahap`, { method:'PATCH', body:{ tahap } });
+    toast('Tahap distribusi diperbarui.');
+    document.querySelector('.modal-overlay').remove();
+    await loadAll();
+    openDetail(id);
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+loadAll();
+</script>
+</body>
+</html>

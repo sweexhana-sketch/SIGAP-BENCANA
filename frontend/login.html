@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Masuk — SIGAP BENCANA</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  body{ background:var(--navy-950); }
+  .login-wrap{
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(242,169,59,0.14), transparent 40%),
+      radial-gradient(circle at 85% 80%, rgba(30,143,114,0.14), transparent 40%),
+      var(--navy-950);
+    position:relative; overflow:hidden;
+  }
+  .contour{ position:absolute; inset:0; opacity:0.5; }
+  .login-card{ position:relative; z-index:2; width:100%; max-width:900px; display:grid; grid-template-columns:1.05fr 1fr;
+    background:var(--panel); border-radius:18px; overflow:hidden; box-shadow:0 24px 60px rgba(0,0,0,0.45); }
+  .login-side{
+    background:linear-gradient(165deg, var(--navy-900), var(--navy-800));
+    color:#fff; padding:42px 36px; display:flex; flex-direction:column; justify-content:space-between; position:relative;
+  }
+  .login-side .brand-mark{width:44px; height:44px; font-size:17px;}
+  .login-side h2{color:#fff; font-size:24px; line-height:1.28; margin-top:22px;}
+  .login-side .lede{color:#9FB0C6; font-size:13px; margin-top:12px; line-height:1.6;}
+  .login-side .quote{border-left:2px solid var(--amber); padding-left:14px; margin-top:auto; font-size:12px; color:#B7C4D6; line-height:1.6;}
+  .login-form{padding:42px 40px;}
+  .login-form h1{font-size:21px;}
+  .login-form .lede{color:var(--text-soft); font-size:13px; margin:6px 0 26px;}
+  .demo-box{background:var(--canvas); border:1px dashed var(--line); border-radius:9px; padding:11px 13px; font-size:11.5px; color:var(--text-soft); margin-top:18px; line-height:1.7;}
+  .demo-box .k{font-family:var(--font-mono); font-weight:600; color:var(--navy-900);}
+  #err-box{display:none; background:var(--red-bg); color:var(--red); border-radius:8px; padding:9px 12px; font-size:12.5px; margin-bottom:14px;}
+  @media(max-width:760px){ .login-card{grid-template-columns:1fr;} .login-side{display:none;} }
+</style>
+</head>
+<body>
+<div class="login-wrap">
+  <svg class="contour" viewBox="0 0 900 700" preserveAspectRatio="none">
+    <path d="M0,520 C150,470 250,560 400,510 C550,460 650,540 900,480 L900,700 L0,700 Z" fill="rgba(255,255,255,0.03)"/>
+    <path d="M0,580 C180,540 300,610 460,570 C600,535 700,600 900,560 L900,700 L0,700 Z" fill="rgba(255,255,255,0.045)"/>
+    <path d="M0,630 C200,600 340,650 480,620 C640,590 720,650 900,620 L900,700 L0,700 Z" fill="rgba(242,169,59,0.06)"/>
+  </svg>
+
+  <div class="login-card">
+    <div class="login-side">
+      <div class="brand-mark">SB</div>
+      <div>
+        <h2>Pusat Komando Tanggap Darurat & Distribusi Bantuan Logistik</h2>
+        <p class="lede">Sistem informasi standar operasional prosedur (SOP) pelayanan tanggap darurat bencana bagi Bidang Perlindungan dan Jaminan Sosial, Dinas Sosial, Pemberdayaan Perempuan dan Perlindungan Anak Provinsi Papua Barat Daya.</p>
+      </div>
+      <p class="quote">"Setiap kejadian bencana ditangani dengan alur kerja terstandar, dari assessment kebutuhan hingga tanda terima bantuan yang akuntabel." — Permensos No. 9 Tahun 2018</p>
+    </div>
+    <div class="login-form">
+      <h1>Masuk ke Sistem</h1>
+      <p class="lede">Gunakan akun petugas resmi Bidang Perlindungan dan Jaminan Sosial.</p>
+      <div id="err-box"></div>
+      <form id="login-form">
+        <div class="field">
+          <label>Username</label>
+          <input type="text" id="username" placeholder="mis. feronika" required autocomplete="username">
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="password" placeholder="Kata sandi" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary w-full" id="btn-submit" style="padding:11px;">Masuk</button>
+      </form>
+      <div class="demo-box">
+        <strong>Akun demo:</strong><br>
+        <span class="k">admin</span> / admin123 — Administrator<br>
+        <span class="k">kabid</span> / kabid123 — Kepala Bidang<br>
+        <span class="k">feronika</span> / petugas123 — Petugas Lapangan
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  if (Auth.getToken()) window.location.href = '/dashboard.html';
+
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errBox = document.getElementById('err-box');
+    const btn = document.getElementById('btn-submit');
+    errBox.style.display = 'none';
+    btn.disabled = true; btn.textContent = 'Memproses...';
+    try{
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const res = await api('/auth/login', { method:'POST', body:{ username, password } });
+      Auth.setSession(res.token, res.user);
+      window.location.href = '/dashboard.html';
+    }catch(err){
+      errBox.textContent = err.message;
+      errBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Masuk';
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — SIGAP BENCANA</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="shell-root"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+Auth.requireLogin();
+renderShell('dashboard', 'Dashboard Operasional', 'Ringkasan kesiapsiagaan & penanganan bencana real-time');
+
+const content = document.getElementById('page-content');
+content.innerHTML = `
+  <div class="stat-grid" id="stat-grid">
+    ${Array(4).fill('<div class="card stat-card"><div class="text-faint text-sm">Memuat...</div></div>').join('')}
+  </div>
+
+  <div class="grid-2" style="align-items:start;">
+    <div class="card">
+      <div class="card-header"><h3>Bencana per Jenis</h3><span class="text-faint text-sm">Kumulatif</span></div>
+      <div class="card-pad" id="chart-jenis"><div class="text-faint text-sm">Memuat data...</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Kelompok Rentan Terdata</h3><span class="text-faint text-sm">Pasal 18 Permensos 9/2018</span></div>
+      <div class="card-pad" id="chart-rentan"><div class="text-faint text-sm">Memuat data...</div></div>
+    </div>
+  </div>
+
+  <div class="grid-2 mt-20" style="align-items:start;">
+    <div class="card">
+      <div class="card-header"><h3>Stok Logistik Kritis</h3><a href="/logistik.html" class="text-sm" style="color:var(--navy-700); font-weight:600;">Lihat semua →</a></div>
+      <div id="stok-kritis-list"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Aktivitas Terbaru</h3><span class="badge badge-teal"><span class="badge-dot"></span>Log Akuntabilitas</span></div>
+      <div id="aktivitas-list" style="max-height:340px; overflow-y:auto;"></div>
+    </div>
+  </div>
+`;
+
+const ICON_STAT = {
+  bencana: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 21h20L12 2Z"/><path d="M12 9v5"/></svg>`,
+  pengungsi: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3.2"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>`,
+  stok: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 7 9-4 9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7"/></svg>`,
+  distribusi: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="13" height="9" rx="1.5"/><path d="M15 10h3.5L21 13v3h-6z"/></svg>`
+};
+
+async function loadDashboard(){
+  try{
+    const s = await api('/dashboard/summary');
+
+    document.getElementById('stat-grid').innerHTML = `
+      <div class="card stat-card">
+        <div class="stat-icon icon-red">${ICON_STAT.bencana}</div>
+        <div class="stat-tag">AKTIF: ${s.bencana_aktif}</div>
+        <div class="stat-num">${s.total_bencana}</div>
+        <div class="stat-label">Total Kejadian Bencana Tercatat</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-icon icon-blue">${ICON_STAT.pengungsi}</div>
+        <div class="stat-num">${s.total_pengungsi}</div>
+        <div class="stat-label">Total Pengungsi Terdampak</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-icon icon-amber">${ICON_STAT.stok}</div>
+        <div class="stat-tag" style="color:${s.stok_kritis>0?'var(--red)':'var(--text-faint)'}">${s.stok_kritis} KRITIS</div>
+        <div class="stat-num">${s.jenis_barang_logistik}</div>
+        <div class="stat-label">Jenis Barang Logistik Terdata</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-icon icon-teal">${ICON_STAT.distribusi}</div>
+        <div class="stat-tag">${s.distribusi_selesai} SELESAI</div>
+        <div class="stat-num">${s.distribusi_berjalan}</div>
+        <div class="stat-label">Distribusi Sedang Berjalan</div>
+      </div>
+    `;
+
+    // Chart sederhana berbasis bar (tanpa dependency eksternal)
+    const jenis = Object.entries(s.bencana_per_jenis);
+    const maxJenis = Math.max(1, ...jenis.map(([,v]) => v));
+    document.getElementById('chart-jenis').innerHTML = jenis.length ? jenis.map(([label, val]) => `
+      <div style="margin-bottom:12px;">
+        <div class="flex justify-between text-sm" style="margin-bottom:5px;"><span>${escapeHtml(label)}</span><span class="mono td-strong">${val}</span></div>
+        <div style="background:var(--canvas); border-radius:6px; height:8px; overflow:hidden;">
+          <div style="width:${(val/maxJenis*100)}%; background:var(--navy-700); height:100%; border-radius:6px;"></div>
+        </div>
+      </div>`).join('') : `<div class="empty-state"><div class="d">Belum ada data kejadian bencana.</div></div>`;
+
+    const rentan = Object.entries(s.kategori_rentan);
+    const maxRentan = Math.max(1, ...rentan.map(([,v]) => v));
+    const warnaRentan = { 'Ibu Hamil':'var(--red)', 'Penyandang Disabilitas':'var(--amber-dark)', 'Anak':'#2C5DAF', 'Lanjut Usia':'var(--teal)', 'Tidak Ada':'var(--text-faint)' };
+    document.getElementById('chart-rentan').innerHTML = rentan.length ? rentan.map(([label, val]) => `
+      <div style="margin-bottom:12px;">
+        <div class="flex justify-between text-sm" style="margin-bottom:5px;"><span>${escapeHtml(label)}</span><span class="mono td-strong">${val}</span></div>
+        <div style="background:var(--canvas); border-radius:6px; height:8px; overflow:hidden;">
+          <div style="width:${(val/maxRentan*100)}%; background:${warnaRentan[label]||'var(--navy-700)'}; height:100%; border-radius:6px;"></div>
+        </div>
+      </div>`).join('') : `<div class="empty-state"><div class="d">Belum ada data korban.</div></div>`;
+
+    document.getElementById('stok-kritis-list').innerHTML = s.stok_kritis_detail.length ? `
+      <div class="table-wrap"><table><thead><tr><th>Barang</th><th>Tersedia</th><th>Minimum</th></tr></thead><tbody>
+      ${s.stok_kritis_detail.map(b => `<tr><td class="td-strong">${escapeHtml(b.nama_barang)}</td>
+        <td><span class="badge badge-red">${b.stok_tersedia} ${escapeHtml(b.satuan)}</span></td>
+        <td class="td-muted">${b.stok_minimum} ${escapeHtml(b.satuan)}</td></tr>`).join('')}
+      </tbody></table></div>` : `<div class="empty-state"><div class="ic">✅</div><div class="t">Semua stok logistik aman</div></div>`;
+
+    const aktivitas = await api('/dashboard/aktivitas');
+    document.getElementById('aktivitas-list').innerHTML = aktivitas.length ? `
+      <div style="padding:6px 20px 16px;">
+      ${aktivitas.map(a => `
+        <div style="display:flex; gap:10px; padding:10px 0; border-bottom:1px solid var(--line);">
+          <div class="user-avatar" style="background:var(--navy-800); width:26px; height:26px; font-size:10px;">${Auth.initials(a.user_nama)}</div>
+          <div style="flex:1;">
+            <div class="text-sm">${escapeHtml(a.keterangan)}</div>
+            <div class="text-faint" style="font-size:11px; margin-top:2px;">${escapeHtml(a.user_nama)} · ${formatWaktuRelatif(a.waktu)}</div>
+          </div>
+        </div>`).join('')}
+      </div>` : `<div class="empty-state"><div class="d">Belum ada aktivitas tercatat.</div></div>`;
+
+  }catch(err){ toast(err.message, 'error'); }
+}
+loadDashboard();
+</script>
+</body>
+</html>

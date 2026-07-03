@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kejadian Bencana — SIGAP BENCANA</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="shell-root"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+Auth.requireLogin();
+renderShell('bencana', 'Kejadian Bencana', 'Pencatatan & klasifikasi kewenangan sesuai Pasal 10 & 29 Permensos No. 9/2018');
+
+const JENIS_ALAM = ['Gempa Bumi','Tsunami','Banjir','Tanah Longsor','Letusan Gunung Api','Gelombang Laut Ekstrem','Angin Topan/Siklon Tropis/Puting Beliung','Kekeringan'];
+const JENIS_SOSIAL = ['Konflik Sosial','Aksi Teror','Kebakaran Permukiman dan Gedung','Wabah/Epidemi','Gagal Teknologi','Kebakaran Hutan dan Lahan'];
+const TAHAPAN = ['Laporan Awal Kejadian','Aktivasi Komando Tanggap Darurat','Assessment Kebutuhan','Verifikasi & Penetapan Bantuan','Distribusi Bantuan Logistik','Pelaporan & Evaluasi'];
+let currentList = [];
+
+const content = document.getElementById('page-content');
+content.innerHTML = `
+  <div class="content-header">
+    <div>
+      <span class="eyebrow">Registrasi Kejadian</span>
+      <h2>Daftar Kejadian Bencana</h2>
+      <div class="desc">Setiap kejadian diklasifikasikan otomatis sebagai kewenangan provinsi atau kabupaten/kota berdasarkan jumlah pengungsi dan cakupan dampak.</div>
+    </div>
+    <button class="btn btn-amber" onclick="openFormModal()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+      Catat Kejadian Baru
+    </button>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-pad flex gap-10" style="flex-wrap:wrap;">
+      <input type="search" id="q" placeholder="Cari jenis bencana / lokasi..." style="max-width:260px;" oninput="renderList()">
+      <select id="f-status" style="max-width:190px;" onchange="renderList()">
+        <option value="">Semua Status</option>
+        <option value="tanggap_darurat">Tanggap Darurat</option>
+        <option value="pasca_darurat">Pasca Darurat</option>
+        <option value="selesai">Selesai</option>
+      </select>
+      <select id="f-kewenangan" style="max-width:190px;" onchange="renderList()">
+        <option value="">Semua Kewenangan</option>
+        <option value="provinsi">Provinsi</option>
+        <option value="kabupaten/kota">Kabupaten/Kota</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card"><div class="table-wrap" id="tbl-bencana"></div></div>
+`;
+
+const STATUS_BADGE = {
+  tanggap_darurat: '<span class="badge badge-red"><span class="badge-dot"></span>Tanggap Darurat</span>',
+  pasca_darurat: '<span class="badge badge-amber"><span class="badge-dot"></span>Pasca Darurat</span>',
+  selesai: '<span class="badge badge-teal"><span class="badge-dot"></span>Selesai</span>'
+};
+const KEWENANGAN_BADGE = {
+  'provinsi': '<span class="badge badge-blue">PROVINSI</span>',
+  'kabupaten/kota': '<span class="badge badge-gray">KAB/KOTA</span>',
+  'perlu_verifikasi': '<span class="badge badge-amber">PERLU VERIFIKASI</span>'
+};
+
+async function loadList(){
+  try{
+    currentList = await api('/bencana');
+    renderList();
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+function renderList(){
+  const q = document.getElementById('q').value.toLowerCase();
+  const fStatus = document.getElementById('f-status').value;
+  const fKew = document.getElementById('f-kewenangan').value;
+  let data = currentList.filter(b =>
+    (!q || (b.jenis_bencana+' '+b.lokasi).toLowerCase().includes(q)) &&
+    (!fStatus || b.status === fStatus) &&
+    (!fKew || b.kewenangan === fKew)
+  );
+
+  document.getElementById('tbl-bencana').innerHTML = data.length ? `
+    <table>
+      <thead><tr><th>Jenis Bencana</th><th>Lokasi</th><th>Tanggal</th><th>Pengungsi</th><th>Kewenangan</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${data.map(b => `
+          <tr>
+            <td>
+              <div class="td-strong">${escapeHtml(b.jenis_bencana)}</div>
+              <div class="td-muted">${b.jenis_kategori === 'alam' ? 'Bencana Alam' : 'Bencana Sosial'}</div>
+            </td>
+            <td>${escapeHtml(b.lokasi)}</td>
+            <td class="mono text-sm">${formatTanggal(b.tanggal_kejadian)}</td>
+            <td class="mono">${b.jumlah_pengungsi} org</td>
+            <td>${KEWENANGAN_BADGE[b.kewenangan] || ''}</td>
+            <td>${STATUS_BADGE[b.status] || ''}</td>
+            <td><button class="btn btn-outline btn-sm" onclick="openDetail('${b.id}')">Kelola →</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  ` : `<div class="empty-state"><div class="ic">🗂️</div><div class="t">Belum ada kejadian bencana tercatat</div><div class="d">Klik "Catat Kejadian Baru" untuk memulai.</div></div>`;
+}
+
+// ---------------- Form Tambah/Edit ----------------
+function openFormModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.innerHTML = `
+    <div class="modal modal-lg">
+      <div class="modal-head"><h3>Catat Kejadian Bencana Baru</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field">
+            <label>Kategori Bencana</label>
+            <select id="f-jenis_kategori" onchange="updateJenisOptions()">
+              <option value="alam">Bencana Alam</option>
+              <option value="sosial">Bencana Sosial</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Jenis Bencana (Pasal 5 Permensos 9/2018)</label>
+            <select id="f-jenis_bencana"></select>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Lokasi Kejadian</label><input type="text" id="f-lokasi" placeholder="mis. Distrik Aimas, Kab. Sorong"></div>
+          <div class="field"><label>Tanggal Kejadian</label><input type="date" id="f-tanggal"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label>Jumlah Pengungsi/Penyintas</label>
+            <input type="number" id="f-jumlah" min="0" placeholder="0" oninput="previewKewenangan()">
+          </div>
+          <div class="field">
+            <label style="visibility:hidden;">.</label>
+            <div class="checkbox-row" style="margin-top:10px;">
+              <input type="checkbox" id="f-dampak" onchange="previewKewenangan()">
+              <label style="margin:0;">Dampak meliputi lebih dari 1 kabupaten/kota</label>
+            </div>
+          </div>
+        </div>
+        <div id="kewenangan-preview" class="text-sm" style="margin-bottom:14px;"></div>
+        <div class="form-grid">
+          <div class="field"><label>No. Surat Penetapan Bencana</label><input type="text" id="f-no-surat" placeholder="Opsional"></div>
+          <div class="field"><label>Pejabat Penetapan</label><input type="text" id="f-pejabat" placeholder="Gubernur / Bupati / Wali Kota"></div>
+        </div>
+        <div class="field"><label>Deskripsi Singkat</label><textarea id="f-deskripsi" placeholder="Kronologi singkat, kondisi lapangan, dsb."></textarea></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Batal</button>
+        <button class="btn btn-primary" id="btn-save-bencana" onclick="submitBencana()">Simpan Kejadian</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  updateJenisOptions();
+  previewKewenangan();
+}
+
+function updateJenisOptions(){
+  const kat = document.getElementById('f-jenis_kategori').value;
+  const list = kat === 'alam' ? JENIS_ALAM : JENIS_SOSIAL;
+  document.getElementById('f-jenis_bencana').innerHTML = list.map(j => `<option value="${j}">${j}</option>`).join('');
+}
+
+function previewKewenangan(){
+  const jml = Number(document.getElementById('f-jumlah').value || 0);
+  const dampak = document.getElementById('f-dampak').checked;
+  let hasil, warna;
+  if (jml >= 51 && jml <= 100) { hasil = 'Kewenangan PROVINSI (51–100 pengungsi)'; warna='var(--navy-700)'; }
+  else if (jml >= 1 && jml <= 50 && !dampak) { hasil = 'Kewenangan KABUPATEN/KOTA (1–50 pengungsi)'; warna='var(--teal)'; }
+  else if (dampak) { hasil = 'Kewenangan PROVINSI (dampak lintas kabupaten/kota)'; warna='var(--navy-700)'; }
+  else { hasil = 'Masukkan jumlah pengungsi untuk melihat klasifikasi kewenangan'; warna='var(--text-faint)'; }
+  document.getElementById('kewenangan-preview').innerHTML = `<span style="color:${warna}; font-weight:600;">Klasifikasi otomatis (Pasal 10 & 29):</span> ${hasil}`;
+}
+
+async function submitBencana(){
+  const btn = document.getElementById('btn-save-bencana');
+  const payload = {
+    jenis_kategori: document.getElementById('f-jenis_kategori').value,
+    jenis_bencana: document.getElementById('f-jenis_bencana').value,
+    lokasi: document.getElementById('f-lokasi').value.trim(),
+    tanggal_kejadian: document.getElementById('f-tanggal').value,
+    jumlah_pengungsi: document.getElementById('f-jumlah').value,
+    dampak_lebih_1_kabkota: document.getElementById('f-dampak').checked,
+    no_surat_penetapan: document.getElementById('f-no-surat').value.trim(),
+    pejabat_penetapan: document.getElementById('f-pejabat').value.trim(),
+    deskripsi: document.getElementById('f-deskripsi').value.trim()
+  };
+  if (!payload.lokasi || !payload.tanggal_kejadian || !payload.jumlah_pengungsi){
+    toast('Lokasi, tanggal, dan jumlah pengungsi wajib diisi.', 'error'); return;
+  }
+  btn.disabled = true; btn.textContent = 'Menyimpan...';
+  try{
+    await api('/bencana', { method:'POST', body: payload });
+    toast('Kejadian bencana berhasil dicatat.');
+    document.querySelector('.modal-overlay').remove();
+    loadList();
+  }catch(err){ toast(err.message, 'error'); btn.disabled = false; btn.textContent = 'Simpan Kejadian'; }
+}
+
+// ---------------- Detail & Tahapan ICS ----------------
+async function openDetail(id){
+  try{
+    const b = await api('/bencana/' + id);
+    const idxTahap = TAHAPAN.indexOf(b.tahap_ics);
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.innerHTML = `
+      <div class="modal modal-lg">
+        <div class="modal-head">
+          <div>
+            <h3>${escapeHtml(b.jenis_bencana)} — ${escapeHtml(b.lokasi)}</h3>
+            <div class="text-faint text-sm mono">${formatTanggal(b.tanggal_kejadian)} · ${b.jumlah_pengungsi} pengungsi · ${KEWENANGAN_BADGE[b.kewenangan]}</div>
+          </div>
+          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="eyebrow">Alur Komando Tanggap Darurat (ICS)</div>
+          <div class="stepper">
+            ${TAHAPAN.map((t,i) => `
+              <div class="step ${i<idxTahap?'done':''} ${i===idxTahap?'current':''}">
+                <div class="connector"></div>
+                <div class="node">${i<idxTahap?'✓':i+1}</div>
+                <div class="step-label">${t}</div>
+              </div>`).join('')}
+          </div>
+          <div class="flex gap-8 mt-14" style="flex-wrap:wrap;">
+            ${TAHAPAN.map((t,i) => `<button class="btn btn-sm ${i===idxTahap?'btn-amber':'btn-outline'}" onclick="updateTahap('${b.id}','${t.replace(/'/g,"\\'")}')">${i+1}. ${t}</button>`).join('')}
+          </div>
+
+          <div class="divider"></div>
+          <div class="grid-2">
+            <div>
+              <div class="eyebrow">Status Penanganan</div>
+              <select id="d-status" onchange="updateStatus('${b.id}', this.value)">
+                <option value="tanggap_darurat" ${b.status==='tanggap_darurat'?'selected':''}>Tanggap Darurat</option>
+                <option value="pasca_darurat" ${b.status==='pasca_darurat'?'selected':''}>Pasca Darurat</option>
+                <option value="selesai" ${b.status==='selesai'?'selected':''}>Selesai</option>
+              </select>
+            </div>
+            <div>
+              <div class="eyebrow">Penetapan</div>
+              <div class="text-sm">${b.no_surat_penetapan ? escapeHtml(b.no_surat_penetapan) : '<span class="text-faint">Belum ada nomor surat</span>'}</div>
+              <div class="text-faint text-sm">${b.pejabat_penetapan ? 'oleh ' + escapeHtml(b.pejabat_penetapan) : ''}</div>
+            </div>
+          </div>
+
+          ${b.deskripsi ? `<div class="mt-14"><div class="eyebrow">Deskripsi</div><div class="text-sm">${escapeHtml(b.deskripsi)}</div></div>` : ''}
+
+          <div class="divider"></div>
+          <div class="flex justify-between items-center">
+            <div class="eyebrow" style="margin:0;">Data Korban Terdaftar (${b.korban.length})</div>
+            <a href="/korban.html?bencana_id=${b.id}" class="btn btn-outline btn-sm">Kelola Data Korban →</a>
+          </div>
+          <div class="flex justify-between items-center mt-14">
+            <div class="eyebrow" style="margin:0;">Distribusi Bantuan (${b.distribusi.length})</div>
+            <a href="/distribusi.html?bencana_id=${b.id}" class="btn btn-outline btn-sm">Kelola Distribusi →</a>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-danger" onclick="hapusBencana('${b.id}')">Hapus Data</button>
+          <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Tutup</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+async function updateTahap(id, tahap){
+  try{
+    await api(`/bencana/${id}/tahap`, { method:'PATCH', body:{ tahap_ics: tahap } });
+    toast('Tahapan penanganan diperbarui.');
+    document.querySelector('.modal-overlay').remove();
+    loadList(); openDetail(id);
+  }catch(err){ toast(err.message, 'error'); }
+}
+async function updateStatus(id, status){
+  try{
+    await api(`/bencana/${id}/tahap`, { method:'PATCH', body:{ status } });
+    toast('Status penanganan diperbarui.');
+    loadList();
+  }catch(err){ toast(err.message, 'error'); }
+}
+async function hapusBencana(id){
+  if (!confirm('Hapus data kejadian bencana ini beserta seluruh data korban terkait? Tindakan ini tidak dapat dibatalkan.')) return;
+  try{
+    await api('/bencana/' + id, { method:'DELETE' });
+    toast('Data kejadian bencana dihapus.');
+    document.querySelector('.modal-overlay').remove();
+    loadList();
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+// buka detail otomatis jika datang dari link luar
+const params = new URLSearchParams(window.location.search);
+loadList().then(() => { if (params.get('open')) openDetail(params.get('open')); });
+</script>
+</body>
+</html>

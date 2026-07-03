@@ -1,0 +1,27 @@
+# Dependencies
+backend/node_modules/
+frontend/node_modules/
+
+# Environment variables (JANGAN pernah di-push!)
+backend/.env
+.env
+
+# Old database files
+backend/data/db.json
+backend/db.json
+
+# Upload files lokal
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Supabase CLI binary
+backend/supabase.exe
+backend/supabase.tar.gz
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

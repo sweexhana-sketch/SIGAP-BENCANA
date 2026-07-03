@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kelola Akun — SIGAP BENCANA</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="shell-root"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+Auth.requireLogin();
+const user = Auth.getUser();
+if (user.role !== 'admin'){ document.body.innerHTML = '<p style="padding:30px;font-family:sans-serif;">Akses ditolak. Halaman ini khusus Administrator.</p>'; throw new Error('forbidden'); }
+
+renderShell('users', 'Kelola Akun Petugas', 'Manajemen pengguna sistem dan hak akses berbasis peran');
+
+const ROLE_LABEL = { admin:'Administrator', kepala_bidang:'Kepala Bidang', petugas:'Petugas Lapangan' };
+const content = document.getElementById('page-content');
+content.innerHTML = `
+  <div class="content-header">
+    <div><span class="eyebrow">Manajemen Pengguna</span><h2>Akun Petugas Sistem</h2>
+      <div class="desc">Admin mengelola akses login untuk seluruh petugas Bidang Perlindungan dan Jaminan Sosial.</div>
+    </div>
+    <button class="btn btn-amber" onclick="openFormModal()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+      Tambah Akun
+    </button>
+  </div>
+  <div class="card"><div class="table-wrap" id="tbl-users"></div></div>
+`;
+
+async function loadList(){
+  try{
+    const list = await api('/auth/users');
+    document.getElementById('tbl-users').innerHTML = `
+      <table>
+        <thead><tr><th>Nama</th><th>Username</th><th>Jabatan</th><th>Role</th><th></th></tr></thead>
+        <tbody>
+        ${list.map(u => `
+          <tr>
+            <td class="td-strong">${escapeHtml(u.nama)}</td>
+            <td class="mono">${escapeHtml(u.username)}</td>
+            <td class="text-sm">${escapeHtml(u.jabatan||'-')}</td>
+            <td><span class="badge badge-blue">${ROLE_LABEL[u.role]||u.role}</span></td>
+            <td>${u.id !== user.id ? `<button class="btn btn-danger btn-sm" onclick="hapusUser('${u.id}')">Hapus</button>` : '<span class="text-faint text-sm">Akun aktif</span>'}</td>
+          </tr>
+        `).join('')}
+        </tbody>
+      </table>
+    `;
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+function openFormModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>Tambah Akun Petugas</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+      <div class="modal-body">
+        <div class="field"><label>Nama Lengkap</label><input type="text" id="f-nama"></div>
+        <div class="field"><label>Jabatan</label><input type="text" id="f-jabatan" placeholder="mis. Penyuluh Sosial Ahli Pertama"></div>
+        <div class="form-grid">
+          <div class="field"><label>Username</label><input type="text" id="f-username"></div>
+          <div class="field"><label>Password</label><input type="password" id="f-password" placeholder="min. 6 karakter"></div>
+        </div>
+        <div class="field"><label>Role</label>
+          <select id="f-role">
+            <option value="petugas">Petugas Lapangan</option>
+            <option value="kepala_bidang">Kepala Bidang (dapat memverifikasi)</option>
+            <option value="admin">Administrator</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Batal</button>
+        <button class="btn btn-primary" onclick="submitUser()">Simpan</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+async function submitUser(){
+  const payload = {
+    nama: document.getElementById('f-nama').value.trim(),
+    jabatan: document.getElementById('f-jabatan').value.trim(),
+    username: document.getElementById('f-username').value.trim(),
+    password: document.getElementById('f-password').value,
+    role: document.getElementById('f-role').value
+  };
+  if (!payload.nama || !payload.username || !payload.password){ toast('Nama, username, dan password wajib diisi.', 'error'); return; }
+  try{
+    await api('/auth/users', { method:'POST', body: payload });
+    toast('Akun petugas berhasil dibuat.');
+    document.querySelector('.modal-overlay').remove();
+    loadList();
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+async function hapusUser(id){
+  if (!confirm('Hapus akun petugas ini?')) return;
+  try{
+    await api('/auth/users/' + id, { method:'DELETE' });
+    toast('Akun dihapus.');
+    loadList();
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+loadList();
+</script>
+</body>
+</html>

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventori Logistik — SIGAP BENCANA</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="shell-root"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+Auth.requireLogin();
+const user = Auth.getUser();
+renderShell('logistik', 'Inventori Logistik', 'Pemantauan stok barang bantuan & mutasi keluar-masuk gudang');
+
+let logistikList = [];
+const content = document.getElementById('page-content');
+content.innerHTML = `
+  <div class="content-header">
+    <div>
+      <span class="eyebrow">Manajemen Gudang</span>
+      <h2>Stok Barang Bantuan Logistik</h2>
+      <div class="desc">Barang dengan stok di bawah ambang minimum ditandai kritis dan perlu segera diisi ulang.</div>
+    </div>
+    ${['admin','kepala_bidang'].includes(user.role) ? `
+    <button class="btn btn-amber" onclick="openFormModal()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+      Tambah Jenis Barang
+    </button>` : ''}
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-pad flex gap-10" style="flex-wrap:wrap;">
+      <select id="f-kategori" style="max-width:220px;" onchange="renderList()">
+        <option value="">Semua Kategori</option>
+      </select>
+      <label class="checkbox-row" style="margin:0;"><input type="checkbox" id="f-kritis" onchange="renderList()"> Hanya tampilkan stok kritis</label>
+    </div>
+  </div>
+
+  <div class="card"><div class="table-wrap" id="tbl-logistik"></div></div>
+`;
+
+async function loadList(){
+  try{
+    logistikList = await api('/logistik');
+    const kategoris = [...new Set(logistikList.map(l => l.kategori))];
+    document.getElementById('f-kategori').innerHTML = `<option value="">Semua Kategori</option>` + kategoris.map(k => `<option value="${k}">${k}</option>`).join('');
+    renderList();
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+function renderList(){
+  const fKat = document.getElementById('f-kategori').value;
+  const fKritis = document.getElementById('f-kritis').checked;
+  let data = logistikList.filter(l => (!fKat || l.kategori === fKat) && (!fKritis || l.stok_tersedia <= l.stok_minimum));
+
+  document.getElementById('tbl-logistik').innerHTML = data.length ? `
+    <table>
+      <thead><tr><th>Barang</th><th>Kategori</th><th>Stok Tersedia</th><th>Stok Minimum</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${data.map(l => {
+          const kritis = l.stok_tersedia <= l.stok_minimum;
+          return `
+          <tr>
+            <td class="td-strong">${escapeHtml(l.nama_barang)}</td>
+            <td><span class="badge badge-gray">${escapeHtml(l.kategori)}</span></td>
+            <td class="mono td-strong">${l.stok_tersedia} ${escapeHtml(l.satuan)}</td>
+            <td class="mono td-muted">${l.stok_minimum} ${escapeHtml(l.satuan)}</td>
+            <td>${kritis ? '<span class="badge badge-red"><span class="badge-dot"></span>Kritis</span>' : '<span class="badge badge-teal"><span class="badge-dot"></span>Aman</span>'}</td>
+            <td class="flex gap-8">
+              <button class="btn btn-outline btn-sm" onclick="openMutasi('${l.id}','masuk')">+ Masuk</button>
+              <button class="btn btn-outline btn-sm" onclick="openMutasi('${l.id}','keluar')">− Keluar</button>
+              <button class="btn btn-outline btn-sm" onclick="openRiwayat('${l.id}')">Riwayat</button>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  ` : `<div class="empty-state"><div class="ic">📦</div><div class="t">Tidak ada data barang</div></div>`;
+}
+
+function openFormModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>Tambah Jenis Barang</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+      <div class="modal-body">
+        <div class="field"><label>Nama Barang</label><input type="text" id="f-nama"></div>
+        <div class="form-grid">
+          <div class="field"><label>Kategori</label><input type="text" id="f-kategori-input" placeholder="mis. Permakanan, Sandang, Shelter"></div>
+          <div class="field"><label>Satuan</label><input type="text" id="f-satuan" placeholder="mis. kg, dus, paket"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Stok Awal</label><input type="number" id="f-stok" min="0" value="0"></div>
+          <div class="field"><label>Stok Minimum (ambang kritis)</label><input type="number" id="f-min" min="0" value="0"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Batal</button>
+        <button class="btn btn-primary" onclick="submitBarang()">Simpan</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+async function submitBarang(){
+  const payload = {
+    nama_barang: document.getElementById('f-nama').value.trim(),
+    kategori: document.getElementById('f-kategori-input').value.trim(),
+    satuan: document.getElementById('f-satuan').value.trim(),
+    stok_tersedia: document.getElementById('f-stok').value,
+    stok_minimum: document.getElementById('f-min').value
+  };
+  if (!payload.nama_barang || !payload.kategori || !payload.satuan){ toast('Nama, kategori, dan satuan wajib diisi.', 'error'); return; }
+  try{
+    await api('/logistik', { method:'POST', body: payload });
+    toast('Jenis barang berhasil ditambahkan.');
+    document.querySelector('.modal-overlay').remove();
+    loadList();
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+function openMutasi(id, jenis){
+  const item = logistikList.find(l => l.id === id);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>${jenis==='masuk'?'Tambah':'Kurangi'} Stok — ${escapeHtml(item.nama_barang)}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+      <div class="modal-body">
+        <div class="text-sm text-soft mb-8">Stok saat ini: <strong>${item.stok_tersedia} ${escapeHtml(item.satuan)}</strong></div>
+        <div class="field"><label>Jumlah (${escapeHtml(item.satuan)})</label><input type="number" id="m-jumlah" min="1"></div>
+        <div class="field"><label>Keterangan</label><input type="text" id="m-ket" placeholder="${jenis==='masuk'?'mis. Donasi PMI, Pengadaan APBD':'mis. Penyaluran non-sistem, kadaluarsa'}"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Batal</button>
+        <button class="btn ${jenis==='masuk'?'btn-teal':'btn-danger'}" onclick="submitMutasi('${id}','${jenis}')">${jenis==='masuk'?'Tambahkan':'Kurangi'} Stok</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+async function submitMutasi(id, jenis){
+  const jumlah = document.getElementById('m-jumlah').value;
+  const keterangan = document.getElementById('m-ket').value.trim();
+  if (!jumlah || Number(jumlah) <= 0){ toast('Jumlah wajib diisi dengan angka valid.', 'error'); return; }
+  try{
+    await api(`/logistik/${id}/mutasi`, { method:'POST', body:{ jenis, jumlah, keterangan } });
+    toast('Mutasi stok berhasil dicatat.');
+    document.querySelector('.modal-overlay').remove();
+    loadList();
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+async function openRiwayat(id){
+  const item = logistikList.find(l => l.id === id);
+  try{
+    const mutasi = await api(`/logistik/${id}/mutasi`);
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.innerHTML = `
+      <div class="modal modal-lg">
+        <div class="modal-head"><h3>Riwayat Mutasi — ${escapeHtml(item.nama_barang)}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+        <div class="modal-body">
+          ${mutasi.length ? `
+          <table><thead><tr><th>Waktu</th><th>Jenis</th><th>Jumlah</th><th>Keterangan</th><th>Oleh</th></tr></thead><tbody>
+          ${mutasi.map(m => `<tr>
+            <td class="text-sm mono">${formatTanggal(m.waktu, true)}</td>
+            <td>${m.jenis === 'masuk' ? '<span class="badge badge-teal">MASUK</span>' : '<span class="badge badge-red">KELUAR</span>'}</td>
+            <td class="mono">${m.jumlah} ${escapeHtml(item.satuan)}</td>
+            <td class="text-sm">${escapeHtml(m.keterangan)}</td>
+            <td class="text-sm">${escapeHtml(m.oleh)}</td>
+          </tr>`).join('')}
+          </tbody></table>` : `<div class="empty-state"><div class="d">Belum ada riwayat mutasi.</div></div>`}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+loadList();
+</script>
+</body>
+</html>

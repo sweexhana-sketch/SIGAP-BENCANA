@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Laporan & Rekap — SIGAP BENCANA</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .doc-sheet{ background:#fff; padding:40px; max-width:800px; margin:0 auto; }
+  .doc-sheet h2{ text-align:center; font-size:16px; text-transform:uppercase; }
+  .doc-sheet .doc-sub{ text-align:center; font-size:12.5px; color:var(--text-soft); margin-top:4px;}
+  .doc-sheet table{ margin-top:18px; }
+  .ttd-grid{ display:grid; grid-template-columns:1fr 1fr; gap:30px; margin-top:50px; text-align:center; font-size:13px; }
+  .ttd-space{ height:70px; }
+</style>
+</head>
+<body>
+<div id="shell-root"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+Auth.requireLogin();
+renderShell('laporan', 'Laporan & Rekap', 'Rekapitulasi penanganan bencana dan cetak berita acara tanda terima bantuan');
+
+const params = new URLSearchParams(window.location.search);
+const distribusiId = params.get('distribusi_id');
+const content = document.getElementById('page-content');
+
+if (distribusiId) {
+  renderBeritaAcara(distribusiId);
+} else {
+  renderRekap();
+}
+
+async function renderRekap(){
+  content.innerHTML = `
+    <div class="content-header">
+      <div>
+        <span class="eyebrow">Rekapitulasi</span>
+        <h2>Laporan Penanganan Bencana</h2>
+        <div class="desc">Ringkasan lintas kejadian bencana, distribusi, dan status penyaluran bantuan untuk keperluan pelaporan pimpinan.</div>
+      </div>
+      <button class="btn btn-outline no-print" onclick="window.print()">🖨 Cetak Rekap</button>
+    </div>
+    <div class="card"><div class="table-wrap" id="tbl-rekap"></div></div>
+  `;
+  try{
+    const [bencana, korban, distribusi] = await Promise.all([api('/bencana'), api('/korban'), api('/distribusi')]);
+    document.getElementById('tbl-rekap').innerHTML = bencana.length ? `
+      <table>
+        <thead><tr><th>Kejadian Bencana</th><th>Tanggal</th><th>Pengungsi</th><th>Korban Terdata</th><th>Distribusi</th><th>Status</th></tr></thead>
+        <tbody>
+        ${bencana.map(b => {
+          const k = korban.filter(x => x.bencana_id === b.id);
+          const d = distribusi.filter(x => x.bencana_id === b.id);
+          const dSelesai = d.filter(x => x.tahap === 'pelaporan').length;
+          return `<tr>
+            <td class="td-strong">${escapeHtml(b.jenis_bencana)}<div class="td-muted">${escapeHtml(b.lokasi)}</div></td>
+            <td class="mono text-sm">${formatTanggal(b.tanggal_kejadian)}</td>
+            <td class="mono">${b.jumlah_pengungsi}</td>
+            <td class="mono">${k.length}</td>
+            <td class="mono">${dSelesai}/${d.length} selesai</td>
+            <td><span class="badge ${b.status==='selesai'?'badge-teal':'badge-amber'}">${b.status.replace('_',' ')}</span></td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+    ` : `<div class="empty-state"><div class="d">Belum ada data untuk direkap.</div></div>`;
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+async function renderBeritaAcara(id){
+  content.innerHTML = `<div class="text-faint text-sm">Memuat dokumen...</div>`;
+  try{
+    const [d, bList] = await Promise.all([api('/distribusi/' + id), api('/bencana')]);
+    const b = bList.find(x => x.id === d.bencana_id);
+    const signed = d.detail.filter(x => x.tanda_terima_signed);
+
+    content.innerHTML = `
+      <div class="content-header no-print">
+        <div><span class="eyebrow">Dokumen Resmi</span><h2>Berita Acara & Tanda Terima Bantuan</h2></div>
+        <button class="btn btn-outline" onclick="window.print()">🖨 Cetak Dokumen</button>
+      </div>
+      <div class="card">
+        <div class="doc-sheet">
+          <div style="text-align:center; font-size:12px; color:var(--text-soft);">
+            PEMERINTAH PROVINSI PAPUA BARAT DAYA<br>
+            DINAS SOSIAL, PEMBERDAYAAN PEREMPUAN DAN PERLINDUNGAN ANAK<br>
+            BIDANG PERLINDUNGAN DAN JAMINAN SOSIAL
+          </div>
+          <div class="divider"></div>
+          <h2>Berita Acara Serah Terima Bantuan Logistik</h2>
+          <div class="doc-sub">${escapeHtml(d.judul)}</div>
+
+          <table style="margin-top:20px;">
+            <tbody>
+              <tr><td class="td-muted" style="width:180px;">Jenis Bencana</td><td>: ${b ? escapeHtml(b.jenis_bencana) : '-'}</td></tr>
+              <tr><td class="td-muted">Lokasi</td><td>: ${b ? escapeHtml(b.lokasi) : '-'}</td></tr>
+              <tr><td class="td-muted">Tanggal Kejadian</td><td>: ${b ? formatTanggal(b.tanggal_kejadian) : '-'}</td></tr>
+              <tr><td class="td-muted">Tanggal Distribusi</td><td>: ${formatTanggal(d.updated_at)}</td></tr>
+              <tr><td class="td-muted">Disalurkan Oleh</td><td>: ${escapeHtml(d.disalurkan_oleh_nama || '-')}</td></tr>
+            </tbody>
+          </table>
+
+          <div class="eyebrow mt-20">Rincian Barang & Penerima</div>
+          <table>
+            <thead><tr><th>No</th><th>Penerima</th><th>Barang</th><th>Jumlah</th><th>Waktu Terima</th></tr></thead>
+            <tbody>
+              ${d.detail.map((item, i) => `<tr>
+                <td>${i+1}</td>
+                <td>${escapeHtml(item.korban_nama)}</td>
+                <td>${escapeHtml(item.nama_barang)}</td>
+                <td class="mono">${item.jumlah} ${escapeHtml(item.satuan)}</td>
+                <td class="mono text-sm">${item.tanda_terima_signed ? formatTanggal(item.penerima_ttd_waktu, true) : '-'}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+
+          <div class="text-sm mt-20">Dokumen ini menyatakan bahwa barang bantuan logistik tersebut di atas telah diserahkan kepada penerima yang berhak sesuai hasil assessment dan verifikasi kebutuhan, sebagai bagian dari pelaksanaan SOP Pelayanan Tanggap Darurat dan Distribusi Bantuan Logistik Bagi Korban Bencana.</div>
+
+          <div class="ttd-grid">
+            <div>
+              Mengetahui,<br>Kepala Bidang Perlindungan dan Jaminan Sosial
+              <div class="ttd-space"></div>
+              (........................................)
+            </div>
+            <div>
+              Petugas Penyalur Bantuan
+              <div class="ttd-space"></div>
+              ${escapeHtml(d.disalurkan_oleh_nama || '(........................................)')}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }catch(err){ toast(err.message, 'error'); content.innerHTML = `<div class="empty-state"><div class="d">${err.message}</div></div>`; }
+}
+</script>
+</body>
+</html>

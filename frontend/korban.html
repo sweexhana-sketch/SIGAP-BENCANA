@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data & Assessment Korban — SIGAP BENCANA</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="shell-root"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+Auth.requireLogin();
+renderShell('korban', 'Data & Assessment Korban', 'Formulir assessment kebutuhan dasar sesuai Pasal 15, 18, 19 Permensos No. 9/2018');
+
+const KEBUTUHAN = [
+  { kode:'permakanan', label:'Permakanan', satuan:'paket/hari', catatan:'Diberikan paling sedikit 7 hari sejak bencana' },
+  { kode:'sandang', label:'Sandang', satuan:'paket' },
+  { kode:'shelter', label:'Tempat Penampungan Pengungsi', satuan:'unit' },
+  { kode:'kelompok_rentan', label:'Penanganan Khusus Kelompok Rentan', satuan:'orang' },
+  { kode:'psikososial', label:'Dukungan Psikososial', satuan:'sesi' }
+];
+const KATEGORI_RENTAN = ['Tidak Ada','Ibu Hamil','Penyandang Disabilitas','Anak','Lanjut Usia'];
+const STATUS_LABEL = {
+  belum_terverifikasi: '<span class="badge badge-amber"><span class="badge-dot"></span>Belum Diverifikasi</span>',
+  terverifikasi: '<span class="badge badge-blue"><span class="badge-dot"></span>Terverifikasi</span>',
+  tersalurkan: '<span class="badge badge-teal"><span class="badge-dot"></span>Tersalurkan</span>'
+};
+
+let bencanaList = [];
+let korbanList = [];
+const params = new URLSearchParams(window.location.search);
+let filterBencanaId = params.get('bencana_id') || '';
+
+const content = document.getElementById('page-content');
+content.innerHTML = `
+  <div class="content-header">
+    <div>
+      <span class="eyebrow">Data Penerima Layanan</span>
+      <h2>Data & Assessment Kebutuhan Korban</h2>
+      <div class="desc">Pencatatan identitas korban, kategori kelompok rentan, dan asesmen kebutuhan dasar oleh Pekerja Sosial/Tenaga Kesejahteraan Sosial/Relawan Sosial.</div>
+    </div>
+    <button class="btn btn-amber" onclick="openFormModal()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+      Tambah Data Korban
+    </button>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-pad flex gap-10" style="flex-wrap:wrap;">
+      <select id="f-bencana" style="max-width:280px;" onchange="onFilterChange()"></select>
+      <input type="search" id="q" placeholder="Cari nama / NIK..." style="max-width:220px;" oninput="renderList()">
+      <select id="f-rentan" style="max-width:210px;" onchange="renderList()">
+        <option value="">Semua Kategori Rentan</option>
+        ${KATEGORI_RENTAN.map(k => `<option value="${k}">${k}</option>`).join('')}
+      </select>
+      <select id="f-status" style="max-width:200px;" onchange="renderList()">
+        <option value="">Semua Status Bantuan</option>
+        <option value="belum_terverifikasi">Belum Diverifikasi</option>
+        <option value="terverifikasi">Terverifikasi</option>
+        <option value="tersalurkan">Tersalurkan</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card"><div class="table-wrap" id="tbl-korban"></div></div>
+`;
+
+async function loadAll(){
+  try{
+    [bencanaList, korbanList] = await Promise.all([api('/bencana'), api('/korban')]);
+    const selBencana = document.getElementById('f-bencana');
+    selBencana.innerHTML = `<option value="">Semua Kejadian Bencana</option>` +
+      bencanaList.map(b => `<option value="${b.id}" ${b.id===filterBencanaId?'selected':''}>${escapeHtml(b.jenis_bencana)} — ${escapeHtml(b.lokasi)}</option>`).join('');
+    renderList();
+  }catch(err){ toast(err.message, 'error'); }
+}
+function onFilterChange(){ filterBencanaId = document.getElementById('f-bencana').value; renderList(); }
+
+function renderList(){
+  const q = document.getElementById('q').value.toLowerCase();
+  const fRentan = document.getElementById('f-rentan').value;
+  const fStatus = document.getElementById('f-status').value;
+  const fBencana = document.getElementById('f-bencana').value;
+
+  let data = korbanList.filter(k =>
+    (!fBencana || k.bencana_id === fBencana) &&
+    (!q || (k.nama+' '+(k.nik||'')).toLowerCase().includes(q)) &&
+    (!fRentan || k.kategori_rentan === fRentan) &&
+    (!fStatus || k.status_bantuan === fStatus)
+  );
+
+  document.getElementById('tbl-korban').innerHTML = data.length ? `
+    <table>
+      <thead><tr><th>Nama / NIK</th><th>Kejadian Bencana</th><th>Kategori Rentan</th><th>Kebutuhan Diases</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${data.map(k => {
+          const b = bencanaList.find(x => x.id === k.bencana_id);
+          return `
+          <tr>
+            <td><div class="td-strong">${escapeHtml(k.nama)}</div><div class="td-muted mono">${escapeHtml(k.nik || '-')}</div></td>
+            <td class="text-sm">${b ? escapeHtml(b.jenis_bencana + ' — ' + b.lokasi) : '<span class="text-faint">-</span>'}</td>
+            <td>${k.kategori_rentan && k.kategori_rentan !== 'Tidak Ada' ? `<span class="badge badge-amber">${escapeHtml(k.kategori_rentan)}</span>` : '<span class="text-faint text-sm">-</span>'}</td>
+            <td class="text-sm">${(k.kebutuhan_assessment||[]).length} item</td>
+            <td>${STATUS_LABEL[k.status_bantuan] || ''}</td>
+            <td><button class="btn btn-outline btn-sm" onclick="openDetail('${k.id}')">Kelola →</button></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  ` : `<div class="empty-state"><div class="ic">🧾</div><div class="t">Belum ada data korban</div><div class="d">Tambahkan data korban untuk kejadian bencana terkait.</div></div>`;
+}
+
+// ---------------- Form Tambah ----------------
+function openFormModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.innerHTML = `
+    <div class="modal modal-lg">
+      <div class="modal-head"><h3>Tambah Data & Assessment Korban</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+      <div class="modal-body">
+        <div class="field">
+          <label>Kejadian Bencana Terkait</label>
+          <select id="f-bencana-id">${bencanaList.map(b => `<option value="${b.id}" ${b.id===filterBencanaId?'selected':''}>${escapeHtml(b.jenis_bencana)} — ${escapeHtml(b.lokasi)}</option>`).join('')}</select>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Nama Lengkap</label><input type="text" id="f-nama"></div>
+          <div class="field"><label>NIK</label><input type="text" id="f-nik" maxlength="16" placeholder="16 digit (opsional jika belum tersedia)"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Jenis Kelamin</label>
+            <select id="f-jk"><option value="Laki-laki">Laki-laki</option><option value="Perempuan">Perempuan</option></select>
+          </div>
+          <div class="field"><label>Usia</label><input type="number" id="f-usia" min="0" max="120"></div>
+        </div>
+        <div class="field">
+          <label>Kategori Kelompok Rentan (Pasal 18)</label>
+          <select id="f-rentan">${KATEGORI_RENTAN.map(k => `<option value="${k}">${k}</option>`).join('')}</select>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Alamat Asal</label><input type="text" id="f-alamat"></div>
+          <div class="field"><label>Lokasi Pengungsian</label><input type="text" id="f-lokasi-pengungsian"></div>
+        </div>
+        <div class="field"><label>Kondisi Kesehatan (bila relevan)</label><input type="text" id="f-kesehatan" placeholder="mis. sehat / luka ringan / memerlukan perawatan"></div>
+
+        <div class="divider"></div>
+        <div class="eyebrow">Formulir Assessment Kebutuhan Dasar (Pasal 15)</div>
+        <div id="kebutuhan-list">
+          ${KEBUTUHAN.map(kb => `
+            <div class="flex items-center gap-10" style="padding:9px 0; border-bottom:1px solid var(--line);">
+              <input type="checkbox" class="kb-check" data-kode="${kb.kode}" style="width:16px; height:16px;">
+              <div style="flex:1;">
+                <div class="text-sm" style="font-weight:600;">${kb.label}</div>
+                ${kb.catatan ? `<div class="text-faint" style="font-size:11px;">${kb.catatan}</div>` : ''}
+              </div>
+              <input type="number" class="kb-jumlah" data-kode="${kb.kode}" placeholder="Jumlah" style="width:90px;" min="0">
+              <span class="text-faint text-sm" style="width:70px;">${kb.satuan}</span>
+            </div>
+          `).join('')}
+        </div>
+        <div class="field mt-14"><label>Catatan Petugas</label><textarea id="f-catatan" placeholder="Catatan tambahan hasil asesmen lapangan"></textarea></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Batal</button>
+        <button class="btn btn-primary" id="btn-save-korban" onclick="submitKorban()">Simpan Data Korban</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+async function submitKorban(){
+  const btn = document.getElementById('btn-save-korban');
+  const nama = document.getElementById('f-nama').value.trim();
+  const bencana_id = document.getElementById('f-bencana-id').value;
+  if (!nama || !bencana_id){ toast('Kejadian bencana dan nama korban wajib diisi.', 'error'); return; }
+
+  const kebutuhan_assessment = [];
+  document.querySelectorAll('.kb-check:checked').forEach(chk => {
+    const kode = chk.dataset.kode;
+    const kb = KEBUTUHAN.find(k => k.kode === kode);
+    const jumlahInput = document.querySelector(`.kb-jumlah[data-kode="${kode}"]`);
+    kebutuhan_assessment.push({ kode, label: kb.label, jumlah: Number(jumlahInput.value) || 0, satuan: kb.satuan });
+  });
+
+  const payload = {
+    bencana_id, nama,
+    nik: document.getElementById('f-nik').value.trim(),
+    jenis_kelamin: document.getElementById('f-jk').value,
+    usia: document.getElementById('f-usia').value,
+    kategori_rentan: document.getElementById('f-rentan').value,
+    alamat_asal: document.getElementById('f-alamat').value.trim(),
+    lokasi_pengungsian: document.getElementById('f-lokasi-pengungsian').value.trim(),
+    kondisi_kesehatan: document.getElementById('f-kesehatan').value.trim(),
+    kebutuhan_assessment,
+    catatan_petugas: document.getElementById('f-catatan').value.trim()
+  };
+
+  btn.disabled = true; btn.textContent = 'Menyimpan...';
+  try{
+    await api('/korban', { method:'POST', body: payload });
+    toast('Data & assessment korban berhasil disimpan.');
+    document.querySelector('.modal-overlay').remove();
+    loadAll();
+  }catch(err){ toast(err.message, 'error'); btn.disabled=false; btn.textContent='Simpan Data Korban'; }
+}
+
+// ---------------- Detail ----------------
+async function openDetail(id){
+  try{
+    const k = await api('/korban/' + id);
+    const b = bencanaList.find(x => x.id === k.bencana_id);
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.innerHTML = `
+      <div class="modal modal-lg">
+        <div class="modal-head">
+          <div><h3>${escapeHtml(k.nama)}</h3><div class="text-faint text-sm mono">${escapeHtml(k.nik || 'NIK belum tersedia')}</div></div>
+          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="grid-3 text-sm">
+            <div><div class="text-faint">Jenis Kelamin</div><div class="td-strong">${escapeHtml(k.jenis_kelamin||'-')}</div></div>
+            <div><div class="text-faint">Usia</div><div class="td-strong">${k.usia ?? '-'}</div></div>
+            <div><div class="text-faint">Kategori Rentan</div><div class="td-strong">${escapeHtml(k.kategori_rentan)}</div></div>
+          </div>
+          <div class="divider"></div>
+          <div class="grid-2 text-sm">
+            <div><div class="text-faint">Kejadian Bencana</div><div>${b ? escapeHtml(b.jenis_bencana + ' — ' + b.lokasi) : '-'}</div></div>
+            <div><div class="text-faint">Lokasi Pengungsian</div><div>${escapeHtml(k.lokasi_pengungsian || '-')}</div></div>
+          </div>
+          <div class="divider"></div>
+          <div class="eyebrow">Kebutuhan Hasil Assessment</div>
+          ${(k.kebutuhan_assessment||[]).length ? `
+            <table><thead><tr><th>Jenis Kebutuhan</th><th>Jumlah</th></tr></thead><tbody>
+            ${k.kebutuhan_assessment.map(kb => `<tr><td>${escapeHtml(kb.label)}</td><td class="mono">${kb.jumlah} ${escapeHtml(kb.satuan)}</td></tr>`).join('')}
+            </tbody></table>` : `<div class="text-faint text-sm">Belum ada item kebutuhan dicatat.</div>`}
+          ${k.catatan_petugas ? `<div class="mt-14"><div class="eyebrow">Catatan Petugas</div><div class="text-sm">${escapeHtml(k.catatan_petugas)}</div></div>` : ''}
+          <div class="mt-14"><span class="text-faint text-sm">Status bantuan saat ini: </span>${STATUS_LABEL[k.status_bantuan]}</div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-danger" onclick="hapusKorban('${k.id}')">Hapus</button>
+          ${k.status_bantuan === 'belum_terverifikasi' ? `<button class="btn btn-teal" onclick="verifikasiKorban('${k.id}')">Verifikasi Kebutuhan</button>` : ''}
+          <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Tutup</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+async function verifikasiKorban(id){
+  try{
+    await api(`/korban/${id}/verifikasi`, { method:'PATCH' });
+    toast('Kebutuhan korban telah diverifikasi.');
+    document.querySelector('.modal-overlay').remove();
+    loadAll();
+  }catch(err){ toast(err.message, 'error'); }
+}
+async function hapusKorban(id){
+  if (!confirm('Hapus data korban ini?')) return;
+  try{
+    await api('/korban/' + id, { method:'DELETE' });
+    toast('Data korban dihapus.');
+    document.querySelector('.modal-overlay').remove();
+    loadAll();
+  }catch(err){ toast(err.message, 'error'); }
+}
+
+loadAll();
+</script>
+</body>
+</html>
