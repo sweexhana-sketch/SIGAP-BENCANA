@@ -37,7 +37,7 @@ function renderShell(activeKey, pageTitle, pageSub){
 
   document.getElementById('shell-root').innerHTML = `
     <div class="app-shell">
-      <aside class="sidebar">
+      <aside class="sidebar" id="app-sidebar">
         <div class="sidebar-brand">
           <img src="/assets/logo.png" alt="Logo Papua Barat Daya" style="width:40px; height:auto; margin-right:12px;">
           <div class="brand-text">
@@ -57,22 +57,35 @@ function renderShell(activeKey, pageTitle, pageSub){
               <div class="ur">${ROLE_LABEL[user.role] || user.role}</div>
             </div>
           </div>
-          <button class="btn-logout" onclick="doLogout()">Keluar Sistem</button>
+          <button class="btn-logout" onclick="doLogout()"><span>Keluar Sistem</span></button>
         </div>
       </aside>
       <div class="main">
         <div class="topbar">
-          <div class="topbar-title">
-            <h1>${pageTitle}</h1>
-            <div class="sub">${pageSub || ''}</div>
+          <div class="flex items-center gap-10">
+            <button class="menu-toggle" id="menu-toggle">☰</button>
+            <div class="topbar-title">
+              <h1>${pageTitle}</h1>
+              <div class="sub">${pageSub || ''}</div>
+            </div>
           </div>
-          <div class="status-ticker"><span class="pulse-dot"></span> Sistem Aktif — Papua Barat Daya</div>
+          <div class="status-ticker hidden-mobile"><span class="pulse-dot"></span> Sistem Aktif</div>
         </div>
         <div class="content" id="page-content"></div>
       </div>
     </div>
     <div id="toast-root"></div>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
   `;
+
+  document.getElementById('menu-toggle').addEventListener('click', () => {
+    document.getElementById('app-sidebar').classList.add('open');
+    document.getElementById('sidebar-overlay').classList.add('open');
+  });
+  document.getElementById('sidebar-overlay').addEventListener('click', () => {
+    document.getElementById('app-sidebar').classList.remove('open');
+    document.getElementById('sidebar-overlay').classList.remove('open');
+  });
 
   loadNavBadges();
 }
