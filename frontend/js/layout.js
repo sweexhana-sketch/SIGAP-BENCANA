@@ -39,7 +39,7 @@ function renderShell(activeKey, pageTitle, pageSub){
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sidebar-brand">
-          <div class="brand-mark">SB</div>
+          <img src="/assets/logo.png" alt="Logo Papua Barat Daya" style="width:40px; height:auto; margin-right:12px;">
           <div class="brand-text">
             <div class="t1">SIGAP BENCANA</div>
             <div class="t2">Dinsos PPPA Papua Barat Daya</div>
