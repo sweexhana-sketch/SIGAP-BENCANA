@@ -10,11 +10,13 @@ app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Pastikan folder pendukung ada
+// Pastikan folder pendukung ada (Lewati jika berjalan di Vercel karena filesystem read-only)
 const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 const dataDir = path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+if (!process.env.VERCEL) {
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+}
 
 app.use('/uploads', express.static(uploadsDir));
 
@@ -45,12 +47,18 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ message: err.message || 'Terjadi kesalahan pada server.' });
 });
 
-app.listen(PORT, () => {
-  console.log('==================================================');
-  console.log(' SIGAP BENCANA — Sistem Informasi SOP Pelayanan');
-  console.log(' Tanggap Darurat & Distribusi Bantuan Logistik');
-  console.log(' Dinas Sosial, PPPA Provinsi Papua Barat Daya');
-  console.log('==================================================');
-  console.log(` Server berjalan di: http://localhost:${PORT}`);
-  console.log('==================================================');
-});
+// Hanya jalankan app.listen jika tidak berjalan di Vercel (serverless function)
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log('==================================================');
+    console.log(' SIGAP BENCANA — Sistem Informasi SOP Pelayanan');
+    console.log(' Tanggap Darurat & Distribusi Bantuan Logistik');
+    console.log(' Dinas Sosial, PPPA Provinsi Papua Barat Daya');
+    console.log('==================================================');
+    console.log(` Server berjalan di: http://localhost:${PORT}`);
+    console.log('==================================================');
+  });
+}
+
+// Export app untuk Vercel
+module.exports = app;
